@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "159849474533",
+    "project_id": "poupehoje-8b8a4",
+    "storage_bucket": "poupehoje-8b8a4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:159849474533:android:8826f5c02320916c55e70c",
+        "android_client_info": {
+          "package_name": "com.armcar.poupehoje"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAWnYI6hiCgPe1QhEYsleg9ue6w86VlgUk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

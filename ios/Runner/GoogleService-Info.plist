@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>159849474533-7bl02ih54e00fu5vkcjl22i4kpkneguj.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.159849474533-7bl02ih54e00fu5vkcjl22i4kpkneguj</string>
+	<key>API_KEY</key>
+	<string>AIzaSyBzyzNYeRZLTBw6HSb6oAmv8NmgplAU5xc</string>
+	<key>GCM_SENDER_ID</key>
+	<string>159849474533</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.armcar.poupehoje</string>
+	<key>PROJECT_ID</key>
+	<string>poupehoje-8b8a4</string>
+	<key>STORAGE_BUCKET</key>
+	<string>poupehoje-8b8a4.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:159849474533:ios:ac2558e25f27fdab55e70c</string>
+</dict>
+</plist>

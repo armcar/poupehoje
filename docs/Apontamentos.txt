@@ -1,0 +1,4 @@
+deprecadas
+withOpacity
+color: cs.primary.withOpacity(.22)
+color: cs.outlineVariant.wthValues(alpha: 0.22)

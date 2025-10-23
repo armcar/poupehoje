@@ -1,0 +1,107 @@
+🧭 Mapa visual do DashboardScreen
+
+Vou dar-te uma visão estrutural do ficheiro, como se fosse um mapa mental.
+Assim ficas logo a saber o quê faz o quê e onde mexer quando quiseres evoluir a app.
+
+🧱 1. Estrutura principal
+DashboardScreen (StatefulWidget)
+│
+├─ AppHeader(title, todayLabel, ...)
+│
+├─ Column
+│   ├─ _PeriodoFiltro      ← seleciona datas início/fim
+│   ├─ _ResumoPeriodo      ← total Entradas, Saídas e Saldo
+│   ├─ _GraficoMovimentos  ← gráfico de barras (Entradas / Saídas / Saldo)
+│   ├─ _GraficoCategorias  ← gráfico circular por categoria
+│   └─ _UltimosMovimentos  ← lista de movimentos recentes
+│
+└─ FloatingActionButton (+) → _showAddTransactionSheet()
+
+📅 2. _PeriodoFiltro
+
+Mostra dois botões (📆 “De” e “Até”).
+
+Usa showDatePicker() com locale pt_PT.
+
+Atualiza o intervalo visível no gráfico e resumo.
+
+💰 3. _ResumoPeriodo
+
+Calcula Entradas, Saídas e Saldo líquido no período selecionado.
+
+Mostra três “cards” com cor (verde / vermelho / azul).
+
+Fonte dos dados → Firestore (users/demo_user/transactions).
+
+📊 4. _GraficoMovimentos
+
+Cria uma barra tripla por mês:
+
+💚 Entradas
+
+❤️ Saídas
+
+⚪ Saldo
+
+Agrupa automaticamente por mês/ano.
+
+Adapta o eixo X com nomes abreviados (“Jan”, “Fev”, …).
+
+🥧 5. _GraficoCategorias
+
+Soma valores de cada categoria no período.
+
+Usa PieChart (fl_chart) com percentagens visuais.
+
+Mostra a cor e o nome da categoria ao lado.
+
+🧾 6. _UltimosMovimentos
+
+Mostra até 10 movimentos recentes dentro do intervalo.
+
+Ícones e cores diferentes para entrada/saída.
+
+Usa StreamBuilder → atualiza em tempo real no Firestore.
+
+➕ 7. _showAddTransactionSheet
+
+Abre modal inferior (showModalBottomSheet).
+
+Campos:
+
+Valor (aceita negativos ✅)
+
+Descrição
+
+Categoria
+
+Data
+
+Guarda em Firestore:
+
+users/demo_user/transactions/{id}
+{
+  "valor": -42.5,
+  "descricao": "Supermercado",
+  "categoria": "Alimentação",
+  "data": Timestamp(...)
+}
+
+🎨 8. Estilo e consistência
+
+Usa gradientes e sombras do AppTheme.
+
+Cabeçalho (AppHeader) comum a todas as páginas.
+
+Compatível com modo escuro / claro.
+
+Localização e formatação de data com intl.
+
+💡 Dica para evoluir:
+Quando migrarmos para autenticação real (login Google),
+basta substituir demo_user por:
+
+FirebaseAuth.instance.currentUser!.uid
+
+
+e todo o resto continua a funcionar sem tocar em Firestore nem UI. ✅
