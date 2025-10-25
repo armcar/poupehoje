@@ -254,7 +254,7 @@ class _AppDrawerState extends State<AppDrawer>
 
                         if (confirm == true) {
                           await _closeWithAnimation(context);
-                          await AuthService.instance.signOut(context);
+                          await AuthService.instance.signOut();
                         }
                       },
                     ),

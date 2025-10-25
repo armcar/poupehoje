@@ -20,6 +20,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   late DateTime _startDate;
   late DateTime _endDate;
 
+  String? _categoriaSelecionada; // null = Todos
+
   @override
   void initState() {
     super.initState();
@@ -44,22 +46,48 @@ class _DashboardScreenState extends State<DashboardScreen> {
               .where('date', isGreaterThanOrEqualTo: _startDate)
               .where('date', isLessThanOrEqualTo: _endDate)
               .orderBy('date', descending: true)
-              .snapshots(),
+              .snapshots(includeMetadataChanges: true), // 👈 mais reativo
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
             }
             if (!snapshot.hasData) return const SizedBox.shrink();
 
-            final transactions = snapshot.data!.docs.map((d) {
+            // Tudo do período selecionado
+            final allPeriod = snapshot.data!.docs.map((d) {
               final data = d.data() as Map<String, dynamic>;
               return {
                 'title': (data['title'] ?? '') as String,
                 'amount': (data['amount'] as num?)?.toDouble() ?? 0.0,
                 'date': (data['date'] as Timestamp).toDate(),
                 'category': (data['category'] ?? 'Outros') as String,
+                'icon': (data['icon'] ?? '') as String, // opcional emoji
               };
             }).toList();
+
+            // Categorias únicas no período (ordenadas por frequência)
+            final Map<String, int> freq = {};
+            final Map<String, String> catEmoji = {};
+            for (final t in allPeriod) {
+              final c = (t['category'] as String).trim();
+              if (c.isEmpty) continue;
+              freq[c] = (freq[c] ?? 0) + 1;
+              final emoji = (t['icon'] as String?) ?? '';
+              if (emoji.isNotEmpty && !catEmoji.containsKey(c)) {
+                catEmoji[c] = emoji;
+              }
+            }
+            final categoriasOrdenadas = freq.keys.toList()
+              ..sort((a, b) => freq[b]!.compareTo(freq[a]!));
+
+            // Aplica filtro (se existir)
+            final filtered = _categoriaSelecionada == null
+                ? allPeriod
+                : allPeriod
+                    .where((t) =>
+                        (t['category'] as String).toLowerCase() ==
+                        _categoriaSelecionada!.toLowerCase())
+                    .toList();
 
             return ListView(
               padding: const EdgeInsets.all(16),
@@ -72,17 +100,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       _startDate = DateTime(start.year, start.month, start.day);
                       _endDate =
                           DateTime(end.year, end.month, end.day, 23, 59, 59);
+                      // mantém filtro ativo
                     });
                   },
                 ),
+
                 const SizedBox(height: 12),
-                _ResumoPeriodo(transactions: transactions),
+
+                // 🔎 Filtro de Categorias (chips)
+                _FiltroCategorias(
+                  categorias: categoriasOrdenadas,
+                  emojiPorCategoria: catEmoji,
+                  categoriaSelecionada: _categoriaSelecionada,
+                  onSelecionar: (c) {
+                    setState(() => _categoriaSelecionada = c);
+                  },
+                ),
+
+                const SizedBox(height: 12),
+
+                // Resumo do período (respeita o filtro)
+                _ResumoPeriodo(transactions: filtered),
+
                 const SizedBox(height: 16),
-                _GraficoMovimentos(transactions: transactions),
+
+                // Gráfico de barras (respeita o filtro)
+                _GraficoMovimentos(transactions: filtered),
+
                 const SizedBox(height: 16),
-                _GraficoCategorias(transactions: transactions),
+
+                // Pie de categorias (respeita o filtro, mas faz sentido só quando Todos ou múltiplas cats)
+                _GraficoCategorias(transactions: filtered),
+
                 const SizedBox(height: 16),
-                _UltimosMovimentos(transactions: transactions),
+
+                // Últimos movimentos (respeita o filtro)
+                _UltimosMovimentos(transactions: filtered),
+
                 const SizedBox(height: 80),
               ],
             );
@@ -96,8 +150,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
           final result =
               await showAddTransactionSheet(context, userId: user.uid);
-          if (result == true) {
-            setState(() {}); // 🔄 atualiza automaticamente
+          if (result == true && context.mounted) {
+            // Feedback + rebuild leve (stream também vai atualizar)
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('✅ Transação guardada com sucesso'),
+                behavior: SnackBarBehavior.floating,
+                duration: Duration(seconds: 2),
+              ),
+            );
+            setState(() {}); // reforça refresh imediato da UI
           }
         },
         icon: const Icon(Icons.add, color: Colors.white),
@@ -136,8 +198,9 @@ class _PeriodoSelector extends StatelessWidget {
               child: OutlinedButton.icon(
                 onPressed: () async {
                   final picked = await showDatePicker(
-                    context: context,
-                    initialDate: startDate,
+                    context: Navigator.of(context)
+                        .context, // 👈 usa o contexto raiz do MaterialApp
+                    initialDate: endDate,
                     firstDate: DateTime(2020),
                     lastDate: DateTime(2100),
                     locale: const Locale('pt', 'PT'),
@@ -164,9 +227,10 @@ class _PeriodoSelector extends StatelessWidget {
                   );
                   if (picked != null) {
                     onChanged(
-                        startDate,
-                        DateTime(
-                            picked.year, picked.month, picked.day, 23, 59, 59));
+                      startDate,
+                      DateTime(
+                          picked.year, picked.month, picked.day, 23, 59, 59),
+                    );
                   }
                 },
                 icon: const Icon(Icons.calendar_today, size: 16),
@@ -181,7 +245,87 @@ class _PeriodoSelector extends StatelessWidget {
 }
 
 // ========================
-// RESUMO DO PERÍODO
+// FILTRO RÁPIDO DE CATEGORIAS
+// ========================
+class _FiltroCategorias extends StatelessWidget {
+  final List<String> categorias;
+  final Map<String, String> emojiPorCategoria; // cat -> emoji
+  final String? categoriaSelecionada;
+  final ValueChanged<String?> onSelecionar;
+
+  const _FiltroCategorias({
+    required this.categorias,
+    required this.emojiPorCategoria,
+    required this.categoriaSelecionada,
+    required this.onSelecionar,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    if (categorias.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    // Mostra no máx. 10 chips (os mais frequentes)
+    final top = categorias.take(10).toList();
+
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilterChip(
+              label: const Text('Todos'),
+              selected: categoriaSelecionada == null,
+              onSelected: (_) => onSelecionar(null),
+              selectedColor: cs.primary,
+              checkmarkColor: cs.onPrimary,
+              labelStyle: TextStyle(
+                color:
+                    categoriaSelecionada == null ? cs.onPrimary : cs.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            for (final c in top)
+              FilterChip(
+                label: Text(
+                  '${emojiPorCategoria[c] ?? ''}${emojiPorCategoria[c] != null ? ' ' : ''}${_titleCase(c)}',
+                ),
+                selected:
+                    categoriaSelecionada?.toLowerCase() == c.toLowerCase(),
+                onSelected: (_) => onSelecionar(c),
+                selectedColor: cs.primary,
+                checkmarkColor: cs.onPrimary,
+                labelStyle: TextStyle(
+                  color: categoriaSelecionada?.toLowerCase() == c.toLowerCase()
+                      ? cs.onPrimary
+                      : cs.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _titleCase(String s) {
+    if (s.isEmpty) return s;
+    return s.split(' ').map((w) {
+      if (w.isEmpty) return w;
+      return w[0].toUpperCase() + w.substring(1).toLowerCase();
+    }).join(' ');
+  }
+}
+
+// ========================
+// RESUMO DO PERÍODO (respeita o filtro)
 // ========================
 class _ResumoPeriodo extends StatelessWidget {
   final List<Map<String, dynamic>> transactions;
@@ -268,7 +412,7 @@ class _ResumoItem extends StatelessWidget {
 }
 
 // ========================
-// GRÁFICO DE MOVIMENTOS
+// GRÁFICO DE MOVIMENTOS (respeita o filtro)
 // ========================
 class _GraficoMovimentos extends StatelessWidget {
   final List<Map<String, dynamic>> transactions;
@@ -279,7 +423,7 @@ class _GraficoMovimentos extends StatelessWidget {
     if (transactions.isEmpty) {
       return const SizedBox(
         height: 200,
-        child: Center(child: Text('Sem dados no período')),
+        child: Center(child: Text('Sem dados neste período / filtro')),
       );
     }
 
@@ -392,7 +536,7 @@ class _GraficoMovimentos extends StatelessWidget {
 }
 
 // ========================
-// GRÁFICO DE CATEGORIAS
+// GRÁFICO DE CATEGORIAS (respeita o filtro)
 // ========================
 class _GraficoCategorias extends StatelessWidget {
   final List<Map<String, dynamic>> transactions;
@@ -405,7 +549,7 @@ class _GraficoCategorias extends StatelessWidget {
     if (despesas.isEmpty) {
       return const SizedBox(
           height: 200,
-          child: Center(child: Text('Sem despesas neste período')));
+          child: Center(child: Text('Sem despesas neste período / filtro')));
     }
 
     final Map<String, double> totais = {};
@@ -465,7 +609,7 @@ class _GraficoCategorias extends StatelessWidget {
                   children: [
                     Container(width: 12, height: 12, color: color),
                     const SizedBox(width: 6),
-                    Text(k,
+                    Text(_titleCase(k),
                         style: const TextStyle(fontWeight: FontWeight.w600)),
                   ],
                 );
@@ -476,22 +620,51 @@ class _GraficoCategorias extends StatelessWidget {
       ),
     );
   }
+
+  String _titleCase(String s) {
+    if (s.isEmpty) return s;
+    return s.split(' ').map((w) {
+      if (w.isEmpty) return w;
+      return w[0].toUpperCase() + w.substring(1).toLowerCase();
+    }).join(' ');
+  }
 }
 
 // ========================
-// ÚLTIMOS MOVIMENTOS
+// ÚLTIMOS MOVIMENTOS (com Ver Mais) — respeita o filtro
 // ========================
-class _UltimosMovimentos extends StatelessWidget {
+class _UltimosMovimentos extends StatefulWidget {
   final List<Map<String, dynamic>> transactions;
   const _UltimosMovimentos({required this.transactions});
 
   @override
+  State<_UltimosMovimentos> createState() => _UltimosMovimentosState();
+}
+
+class _UltimosMovimentosState extends State<_UltimosMovimentos> {
+  bool verMais = false;
+
+  @override
   Widget build(BuildContext context) {
-    if (transactions.isEmpty) return const SizedBox.shrink();
+    if (widget.transactions.isEmpty) {
+      return const Card(
+        elevation: 3,
+        margin: EdgeInsets.zero,
+        child: SizedBox(
+          height: 120,
+          child:
+              Center(child: Text('Sem movimentos nesta categoria / período')),
+        ),
+      );
+    }
 
     final sorted = [
-      ...transactions
+      ...widget.transactions
     ]..sort((a, b) => (b['date'] as DateTime).compareTo(a['date'] as DateTime));
+
+    final mostrar = verMais ? sorted : sorted.take(5).toList();
+    final temMais = sorted.length > 5;
+    final cs = Theme.of(context).colorScheme;
 
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -507,11 +680,10 @@ class _UltimosMovimentos extends StatelessWidget {
               child: Text('Últimos Movimentos',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             ),
-            ...sorted.take(5).map((t) {
+            ...mostrar.map((t) {
               final valor = t['amount'] as double;
               final categoria = t['category'] as String? ?? 'Outros';
               final data = DateFormat('dd/MM').format(t['date'] as DateTime);
-              final cs = Theme.of(context).colorScheme;
               return ListTile(
                 leading: Icon(
                   valor >= 0
@@ -523,7 +695,7 @@ class _UltimosMovimentos extends StatelessWidget {
                 ),
                 title: Text(t['title'],
                     style: const TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: Text('$categoria  •  $data'),
+                subtitle: Text('${_titleCase(categoria)}  •  $data'),
                 trailing: Text(
                   '${valor >= 0 ? '+' : '-'}€${valor.abs().toStringAsFixed(2)}',
                   style: TextStyle(
@@ -533,9 +705,36 @@ class _UltimosMovimentos extends StatelessWidget {
                 ),
               );
             }),
+            if (temMais) ...[
+              const SizedBox(height: 6),
+              Center(
+                child: TextButton.icon(
+                  onPressed: () => setState(() => verMais = !verMais),
+                  icon: Icon(
+                    verMais ? Icons.expand_less : Icons.expand_more,
+                    color: cs.primary,
+                  ),
+                  label: Text(
+                    verMais ? 'Mostrar menos' : 'Ver mais registos',
+                    style: TextStyle(
+                      color: cs.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  String _titleCase(String s) {
+    if (s.isEmpty) return s;
+    return s.split(' ').map((w) {
+      if (w.isEmpty) return w;
+      return w[0].toUpperCase() + w.substring(1).toLowerCase();
+    }).join(' ');
   }
 }

@@ -58,7 +58,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
                   children: [
                     // LOGO — substitui o caminho conforme o teu ficheiro real
                     Image.asset(
-                      'assets/icons/piggy.png',
+                      'assets/icons/icon.png',
                       width: 28,
                       height: 28,
                       errorBuilder: (_, __, ___) => const Icon(

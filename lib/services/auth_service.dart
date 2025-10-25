@@ -1,85 +1,184 @@
-import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import '../screens/root_screen.dart';
-import '../screens/login_screen.dart';
+import 'package:flutter/material.dart';
 
 class AuthService {
   // Singleton
-  static final AuthService instance = AuthService._internal();
-  AuthService._internal();
+  AuthService._();
+  static final instance = AuthService._();
 
-  final _auth = FirebaseAuth.instance;
-  final _googleSignIn = GoogleSignIn();
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  /// 🔹 Verifica se existe um utilizador autenticado
-  User? get currentUser => _auth.currentUser;
+  /// 🔹 Login com email e password
+  Future<void> signInWithEmail(
+      String email, String password, BuildContext context) async {
+    try {
+      await _auth.signInWithEmailAndPassword(email: email, password: password);
 
-  // =============================
-  // LOGIN COM GOOGLE
-  // =============================
+      // 🔸 Cria/atualiza o perfil no Firestore
+      final user = _auth.currentUser;
+      if (user != null) {
+        await _createOrUpdateUserProfile(user);
+      }
+    } on FirebaseAuthException catch (e) {
+      _showError(context, _translateError(e));
+    } catch (e) {
+      _showError(context, 'Erro inesperado ao autenticar.');
+    }
+  }
+
+  /// 🔹 Criação de conta com email e password (agora com nome opcional)
+  Future<void> signUpWithEmail(
+    String email,
+    String password,
+    BuildContext context, {
+    String? name, // 👈 novo parâmetro
+  }) async {
+    try {
+      await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      final user = _auth.currentUser;
+
+      if (user != null) {
+        // 👇 Atualiza o nome no perfil do FirebaseAuth
+        if (name != null && name.isNotEmpty) {
+          await user.updateDisplayName(name);
+        }
+
+        // 👇 Cria o perfil completo no Firestore
+        await _createOrUpdateUserProfile(user, isNew: true, name: name);
+      }
+    } on FirebaseAuthException catch (e) {
+      _showError(context, _translateError(e));
+    } catch (e) {
+      _showError(context, 'Erro inesperado ao criar conta.');
+    }
+  }
+
+  /// 🔹 Login com Google
   Future<void> signInWithGoogle(BuildContext context) async {
     try {
-      // Inicia o fluxo de autenticação
-      final googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) {
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Login cancelado pelo utilizador')),
-        );
-        return;
-      }
+      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+      if (googleUser == null) return; // utilizador cancelou
 
-      final googleAuth = await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
 
-      // Cria credencial do Firebase
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
-      // Inicia sessão no Firebase
       await _auth.signInWithCredential(credential);
 
-      if (!context.mounted) return;
-      await Future.delayed(Duration.zero); // aguarda 1 frame para estabilidade
-
-      // ✅ Vai para o ecrã principal
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const RootScreen()),
-        (route) => false,
-      );
+      final user = _auth.currentUser;
+      if (user != null) {
+        await _createOrUpdateUserProfile(user);
+      }
+    } on FirebaseAuthException catch (e) {
+      _showError(context, _translateError(e));
     } catch (e) {
-      debugPrint('Erro no login Google: $e');
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Erro ao iniciar sessão com Google')),
-      );
+      _showError(context, 'Erro inesperado ao autenticar com o Google.');
     }
   }
 
-  // =============================
-  // LOGOUT
-  // =============================
-  Future<void> signOut(BuildContext context) async {
-    try {
-      await _googleSignIn.signOut();
-      await _auth.signOut();
+  /// 🔹 Logout
+  Future<void> signOut() async {
+    await _auth.signOut();
+    await GoogleSignIn().signOut();
+  }
 
-      if (!context.mounted) return;
-      await Future.delayed(Duration.zero);
+  /// 🔹 Utilizador atual
+  User? get currentUser => _auth.currentUser;
 
-      // ✅ Redireciona para o ecrã de login
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-        (route) => false,
-      );
-    } catch (e) {
-      debugPrint('Erro ao terminar sessão: $e');
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Erro ao terminar sessão')),
-      );
+  /// 🔹 Stream de autenticação (para redirecionar dinamicamente)
+  Stream<User?> get authStateChanges => _auth.authStateChanges();
+
+  // ==========================================================================
+  // 🔹 PERFIL DO UTILIZADOR NO FIRESTORE
+  // ==========================================================================
+
+  Future<void> _createOrUpdateUserProfile(
+    User user, {
+    bool isNew = false,
+    String? name, // 👈 novo parâmetro
+  }) async {
+    final userDoc =
+        FirebaseFirestore.instance.collection('users').doc(user.uid);
+    final snapshot = await userDoc.get();
+
+    final displayName = name ?? user.displayName ?? '';
+
+    if (!snapshot.exists) {
+      // 🔸 Novo utilizador → cria documento inicial
+      await userDoc.set({
+        'uid': user.uid,
+        'email': user.email,
+        'displayName': displayName,
+        'photoURL': user.photoURL ?? '',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'locale': 'pt_PT',
+        'theme': 'system',
+        'stats': {
+          'logins': 1,
+          'transactions': 0,
+          'saldo': 0.0,
+        },
+      });
+    } else {
+      // 🔸 Utilizador existente → apenas atualiza info básica
+      await userDoc.update({
+        'updatedAt': FieldValue.serverTimestamp(),
+        'displayName': displayName.isNotEmpty
+            ? displayName
+            : snapshot.data()?['displayName'] ?? '',
+        'photoURL': user.photoURL ?? snapshot.data()?['photoURL'] ?? '',
+        'stats.logins': FieldValue.increment(1),
+      });
     }
+  }
+
+  // ==========================================================================
+  // 🔹 GESTÃO DE ERROS
+  // ==========================================================================
+
+  String _translateError(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'email-already-in-use':
+        return 'Este email já está registado.';
+      case 'invalid-email':
+        return 'Email inválido.';
+      case 'weak-password':
+        return 'A password é demasiado fraca.';
+      case 'user-not-found':
+        return 'Utilizador não encontrado.';
+      case 'wrong-password':
+        return 'Password incorreta.';
+      case 'network-request-failed':
+        return 'Erro de rede. Verifique a sua ligação à internet.';
+      case 'too-many-requests':
+        return 'Demasiadas tentativas. Tente novamente mais tarde.';
+      default:
+        return e.message ?? 'Ocorreu um erro inesperado.';
+    }
+  }
+
+  // ==========================================================================
+  // 🔹 ALERTAS E FEEDBACK
+  // ==========================================================================
+
+  void _showError(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.red.shade400,
+      ),
+    );
   }
 }

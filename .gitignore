@@ -18,6 +18,13 @@ migrate_working_dir/
 *.iws
 .idea/
 
+# Ignorar pasta pessoal de ferramentas e notas
+/tools/
+*.txt
+*.md
+*.bak
+*.log
+
 # VS Code (comentado por padrão, ativa se quiseres ignorar configs locais)
 #.vscode/
 

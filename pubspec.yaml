@@ -37,6 +37,7 @@ dependencies:
 
   # Gráficos
   fl_chart: ^0.68.0
+  # syncfusion_flutter_charts: ^26.2.8
 
   # Animações e navegação moderna
   go_router: ^14.2.3
